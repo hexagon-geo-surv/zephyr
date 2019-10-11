@@ -589,7 +589,7 @@
 /subsys/usb/                              @jfischer-no @finikorg
 /subsys/usb/class/dfu/usb_dfu.c           @nvlsianpu
 /tests/                                   @nashif
-/tests/application_development/libcxx/    @pabigot
+/tests/application_development/cpp/       @pabigot
 /tests/arch/arm/                          @ioannisg @stephanosio
 /tests/benchmarks/cmsis_dsp/              @stephanosio
 /tests/boards/native_posix/               @aescolar @daor-oti
