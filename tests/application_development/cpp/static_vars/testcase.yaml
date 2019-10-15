@@ -1,0 +1,11 @@
+tests:
+  misc.app_dev.cpp.static_vars:
+    platform_exclude: qemu_x86_coverage native_posix
+    toolchain_exclude: xcc
+    tags: cpp
+  misc.app_dev.cpp.static_vars.libcxx:
+    platform_exclude: qemu_x86_coverage
+    toolchain_exclude: xcc
+    tags: cpp
+    extra_configs:
+        - CONFIG_LIB_CPLUSPLUS=y
