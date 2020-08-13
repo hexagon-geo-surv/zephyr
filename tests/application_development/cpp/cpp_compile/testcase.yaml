@@ -1,4 +1,11 @@
 tests:
   application_development.cpp.main:
-    platform_exclude: qemu_x86_coverage
+    platform_exclude: qemu_x86_coverage native_posix
     tags: cpp
+    extra_configs:
+      - CONFIG_MINIMAL_LIBC_MALLOC_ARENA_SIZE=128
+  application_development.cpp.main.libcxx:
+    platform_allow: native_posix
+    tags: cpp
+    extra_configs:
+      - CONFIG_LIB_CPLUSPLUS=y
