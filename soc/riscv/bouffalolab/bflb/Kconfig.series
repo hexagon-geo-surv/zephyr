@@ -11,5 +11,11 @@ config SOC_SERIES_BL6
 	select COMPRESSED_ISA
 	select SOC_FAMILY_BFLB
 	select CPU_HAS_FPU
+	select INCLUDE_RESET_VECTOR
+	select XIP
+	select RISCV_PRIVILEGED
+#	select RISCV_HAS_CLIC
+#	select RISCV_VECTORED_MODE
+#	select RISCV_SOC_INTERRUPT_INIT
 	help
 	  Enable support for Bouffalo Lab BL6 MCU series
