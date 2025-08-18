@@ -1,7 +1,19 @@
 # Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 
-if BOARD_MPS4_CORSTONE315_FVP || BOARD_MPS4_CORSTONE320_FVP
+if BOARD_MPS4_CORSTONE315_FVP || \
+	BOARD_MPS4_CORSTONE315_FVP_NS || \
+	BOARD_MPS4_CORSTONE320_FVP  || \
+	BOARD_MPS4_CORSTONE320_FVP_NS
+
+# Get flash configuration for NS image from dts flash partition
+config USE_DT_CODE_PARTITION
+	default y if TRUSTED_EXECUTION_NONSECURE
+
+# By default, if we build for a Non-Secure version of the board,
+# force building with TF-M as the Secure Execution Environment.
+config BUILD_WITH_TFM
+	default y if TRUSTED_EXECUTION_NONSECURE
 
 if SERIAL
 

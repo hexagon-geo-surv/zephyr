@@ -11,6 +11,8 @@
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <mem.h>
 
+#include "mps4_common_ns.dtsi"
+
 / {
 	compatible = "arm,mps4-fvp";
 	#address-cells = <1>;
@@ -19,8 +21,9 @@
 	chosen {
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
-		zephyr,sram = &ram;
-		zephyr,flash = &code;
+		zephyr,sram = &isram;
+		zephyr,flash = &reserved_memory;
+		zephyr,code-partition = &slot0_ns_partition;
 	};
 
 	cpus {
@@ -62,30 +65,10 @@
 		zephyr,memory-region = "DTCM";
 	};
 
-	isram: sram@21000000 {
+	isram: sram@21200000 {
 		compatible = "zephyr,memory-region", "mmio-sram";
-		reg = <0x21000000 DT_SIZE_M(4)>;
+		reg = <0x21200000 DT_SIZE_M(2)>; /* ISRAM1 */
 		zephyr,memory-region = "ISRAM";
-	};
-
-	reserved-memory {
-		#address-cells = <1>;
-		#size-cells = <1>;
-		ranges;
-
-		/* The memory regions defined below must match what the TF-M
-		 * project has defined for that board - a single image boot is
-		 * assumed. Please see the memory layout in:
-		 * https://git.trustedfirmware.org/plugins/gitiles/TF-M/trusted-firmware-m.git/+/HEAD/platform/ext/target/arm/mps4/common/partition/flash_layout.h
-		 */
-
-		code: memory@28080000 {
-			reg = <0x28080000 DT_SIZE_K(512)>;
-		};
-
-		ram: memory@21020000 {
-			reg = <0x21020000 DT_SIZE_M(1)>;
-		};
 	};
 
 	soc {
