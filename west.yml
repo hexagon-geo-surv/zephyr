@@ -23,6 +23,8 @@ manifest:
       url-base: https://github.com/zephyrproject-rtos
     - name: babblesim
       url-base: https://github.com/BabbleSim
+    - name: hexagon-public
+      url-base: https://github.com/hexagon-geo-surv
 
   group-filter: [-babblesim, -optional]
 
@@ -327,7 +329,8 @@ manifest:
       groups:
         - crypto
     - name: trusted-firmware-m
-      revision: 60ebade5d3d381a210af90191e475d8870b8adbc
+      revision: v3.7.1-catfish
+      remote: hexagon-public
       path: modules/tee/tf-m/trusted-firmware-m
       groups:
         - tee
