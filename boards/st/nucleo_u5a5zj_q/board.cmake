@@ -14,3 +14,6 @@ include(${ZEPHYR_BASE}/boards/common/stm32cubeprogrammer.board.cmake)
 include(${ZEPHYR_BASE}/boards/common/openocd-stm32.board.cmake)
 include(${ZEPHYR_BASE}/boards/common/pyocd.board.cmake)
 include(${ZEPHYR_BASE}/boards/common/jlink.board.cmake)
+
+set(BOARD_ROBOT_RUNNER hardware-robot)
+include(${ZEPHYR_BASE}/boards/common/hardware-robot.board.cmake)
