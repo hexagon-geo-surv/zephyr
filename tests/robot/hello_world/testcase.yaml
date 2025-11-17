@@ -1,0 +1,17 @@
+common:
+  tags:
+    - drivers
+    - shell
+    - uart
+  platform_allow:
+    - nucleo_h753zi
+    - nucleo_u5a5zj_q
+  harness: robot
+
+tests:
+  robot.shell:
+    harness_config:
+      robot_testsuite: hello_world.robot
+  robot.shell.serial:
+    harness_config:
+      robot_testsuite: hello_world_serial.robot
