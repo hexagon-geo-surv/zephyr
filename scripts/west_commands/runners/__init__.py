@@ -36,6 +36,7 @@ _names = [
     'esp32',
     'ezflashcli',
     'gd32isp',
+    'hardware-robot',
     'hifive1',
     'intel_adsp',
     'intel_cyclonev',
