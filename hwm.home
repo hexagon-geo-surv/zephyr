@@ -1,0 +1,6 @@
+- connected: true
+  id: 002900343532510831333430
+  platform: nucleo_u5a5zj_q/stm32u5a5xx
+  product: STLINK-V3
+  runner: pyocd
+  serial: /dev/serial/by-id/usb-STMicroelectronics_STLINK-V3_002900343532510831333430-if01
