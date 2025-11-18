@@ -194,6 +194,7 @@ class Robot(Harness):
         if config:
             self.path = config.get('robot_testsuite', None)
             self.option = config.get('robot_option', None)
+            self.type = True if config.get('robot_type', 'renode') == 'renode' else False
 
     def handle(self, line):
         ''' Test cases that make use of this harness care about results given

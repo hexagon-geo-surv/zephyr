@@ -180,6 +180,9 @@ schema;scenario-schema:
         "robot_option":
           type: any
           required: false
+        "robot_type":
+          type: str   # "renode", "robot-framework"
+          required: false
         "record":
           type: map
           required: false

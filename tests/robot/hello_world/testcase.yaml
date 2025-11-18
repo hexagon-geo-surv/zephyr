@@ -11,7 +11,9 @@ common:
 tests:
   robot.shell:
     harness_config:
+      robot_type: robot-framework
       robot_testsuite: hello_world.robot
   robot.shell.serial:
     harness_config:
+      robot_type: robot-framework
       robot_testsuite: hello_world_serial.robot

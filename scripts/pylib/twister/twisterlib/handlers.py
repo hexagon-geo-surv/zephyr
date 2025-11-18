@@ -295,28 +295,31 @@ class BinaryHandler(Handler):
             except subprocess.TimeoutExpired:
                 self.terminate(proc)
 
-    def _create_command(self, robot_test):
-
+    def _create_command(self, robot_test, is_simulation):
         if robot_test:
-            keywords = os.path.join(self.options.coverage_basedir, 'tests/robot/common.robot')
-            elf = os.path.join(self.build_dir, "zephyr/zephyr.elf")
-            command = [self.generator_cmd]
-            resc = ""
-            uart = ""
-            # os.path.join cannot be used on a Mock object, so we are
-            # explicitly checking the type
-            if isinstance(self.instance.platform, Platform):
-                for board_dir in self.options.board_root:
-                    path = os.path.join(Path(board_dir).parent, self.instance.platform.resc)
-                    if os.path.exists(path):
-                        resc = path
-                        break
-                uart = self.instance.platform.uart
-                command = ["renode-test",
-                            "--variable", "KEYWORDS:" + keywords,
-                            "--variable", "ELF:@" + elf,
-                            "--variable", "RESC:@" + resc,
-                            "--variable", "UART:" + uart]
+            if is_simulation:
+                keywords = os.path.join(self.options.coverage_basedir, 'tests/robot/common.robot')
+                elf = os.path.join(self.build_dir, "zephyr/zephyr.elf")
+                command = [self.generator_cmd]
+                resc = ""
+                uart = ""
+                # os.path.join cannot be used on a Mock object, so we are
+                # explicitly checking the type
+                if isinstance(self.instance.platform, Platform):
+                    for board_dir in self.options.board_root:
+                        path = os.path.join(Path(board_dir).parent, self.instance.platform.resc)
+                        if os.path.exists(path):
+                            resc = path
+                            break
+                        uart = self.instance.platform.uart
+                        command = ["renode-test",
+                                   "--variable", "KEYWORDS:" + keywords,
+                                   "--variable", "ELF:@" + elf,
+                                   "--variable", "RESC:@" + resc,
+                                   "--variable", "UART:" + uart]
+            else:
+                command = ["robot"]
+
         elif self.call_make_run:
             if self.options.sim_name:
                 target = f"run_{self.options.sim_name}"
@@ -363,8 +366,9 @@ class BinaryHandler(Handler):
 
     def handle(self, harness):
         robot_test = getattr(harness, "is_robot_test", False)
+        is_simulation = getattr(harness, "type", True)
 
-        command = self._create_command(robot_test)
+        command = self._create_command(robot_test, is_simulation)
 
         logger.debug("Spawning process: " +
                      " ".join(shlex.quote(word) for word in command) + os.linesep +
