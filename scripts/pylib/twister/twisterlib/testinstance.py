@@ -266,7 +266,12 @@ class TestInstance:
             else:
                 handler = SimulationHandler(self, simulator.name, *common_args)
                 handler.ready = simulator.is_runnable()
-
+        elif self.testsuite.harness == "robot":
+            handler = BinaryHandler(self, "robot", *common_args)
+            handler.binary = os.path.join(self.build_dir, "testbinary")
+            handler.call_make_run = True
+            handler.ready = True
+            self.run = True
         elif self.testsuite.type == "unit":
             handler = BinaryHandler(self, "unit", *common_args)
             handler.binary = os.path.join(self.build_dir, "testbinary")

@@ -4,7 +4,7 @@ common:
     - shell
     - uart
   platform_allow:
-    - nucleo_h753zi
+#    - nucleo_h753zi
     - nucleo_u5a5zj_q
   harness: robot
 
