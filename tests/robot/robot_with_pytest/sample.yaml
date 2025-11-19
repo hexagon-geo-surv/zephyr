@@ -1,0 +1,24 @@
+sample:
+  name: Robot Framework Test Sample
+  description: Test Robot Framework integration with Twister harness
+
+tests:
+  test.robot.robot_with_pytest:
+    tags: robotframework
+    platform_allow:
+      - nucleo_g474re
+    extra_configs:
+      - CONFIG_PRINTK=y
+      - CONFIG_STDOUT_CONSOLE=y
+    harness: pytest
+    harness_config:
+      pytest_root: 
+        - "."
+      pytest_args:
+        - "--twister-with-robot"
+        - "-v"
+        - "--log-cli-level=DEBUG"
+    integration_platforms:
+      - nucleo_g474re
+    min_ram: 64
+    min_flash: 128

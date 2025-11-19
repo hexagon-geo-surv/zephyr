@@ -1,0 +1,8 @@
+robotframework>=5.0.0
+pytest-robotframework>=2.0.0
+
+[dev]
+pytest
+black
+flake8
+mypy

@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: pytest-robotframework-twister-harness
+Version: 0.1.0
+Summary: Robot Framework harness for pytest-twister-harness
+Author-email: Your Name <your.email@example.com>
+Requires-Python: >=3.8
+Requires-Dist: robotframework>=5.0.0
+Requires-Dist: pytest-robotframework>=2.0.0
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Dynamic: requires-python
