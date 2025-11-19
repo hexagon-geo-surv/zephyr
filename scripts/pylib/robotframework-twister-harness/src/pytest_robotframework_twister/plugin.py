@@ -1,4 +1,4 @@
-"""Main plugin for Robot Framework Twister integration."""
+"""Plugin for running Robot Framework tests with Twister harness."""
 import logging
 
 import pytest
@@ -11,24 +11,10 @@ def pytest_addoption(parser):
     group = parser.getgroup("robotframework-twister")
 
     group.addoption(
-        "--twister-robot-test-dir",
-        action="store",
-        default=None,
-        help="Directory containing Robot Framework test files"
-    )
-
-    group.addoption(
-        "--twister-robot-vars",
-        action="store", 
-        default=None,
-        help="Path to Robot Framework variable file"
-    )
-
-    group.addoption(
         "--twister-with-robot",
-        action="store_true",
+        action="store_true", 
         default=False,
-        help="Enable Robot Framework integration with Twister"
+        help="Run Robot Framework tests with Twister harness"
     )
 
 
@@ -39,11 +25,8 @@ def pytest_configure(config):
             "markers",
             "robotframework: mark test as Robot Framework test to run with Twister harness"
         )
+        logger.info("✅ Robot Framework Twister plugin configured")
 
 
-@pytest.hookimpl(tryfirst=True)
-def pytest_collection_modifyitems(config, items):
-    """Modify test collection based on Robot Framework options."""
-    if not config.getoption("--twister-with-robot"):
-        # Remove Robot Framework tests if not enabled
-        items[:] = [item for item in items if "robotframework" not in item.keywords]
+# Import collector to register hooks
+from .collector import pytest_collect_file
