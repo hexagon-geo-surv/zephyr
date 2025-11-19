@@ -13,11 +13,11 @@ tests:
     harness: pytest
     harness_config:
       pytest_root: 
-        - "."
+        - "robot_tests"
       pytest_args:
-        - "--twister-with-robot"
         - "-v"
         - "--log-cli-level=DEBUG"
+        - "tests/robot/robot_with_pytest/robot_tests/test_robot_framework.py"
     integration_platforms:
       - nucleo_g474re
     min_ram: 64

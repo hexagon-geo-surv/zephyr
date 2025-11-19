@@ -1,5 +1,6 @@
 robotframework>=5.0.0
-pytest-robotframework>=2.0.0
+robotframework-seriallibrary>=0.4.0
+pyserial>=3.5
 
 [dev]
 pytest

@@ -5,7 +5,8 @@ Summary: Robot Framework harness for pytest-twister-harness
 Author-email: Your Name <your.email@example.com>
 Requires-Python: >=3.8
 Requires-Dist: robotframework>=5.0.0
-Requires-Dist: pytest-robotframework>=2.0.0
+Requires-Dist: robotframework-seriallibrary>=0.4.0
+Requires-Dist: pyserial>=3.5
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: black; extra == "dev"
