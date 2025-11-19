@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 def pytest_addoption(parser):
     """Add Robot Framework specific options to twister harness."""
-    group = parser.getgroup("robotframework-twister")
+    group = parser.getgroup("twister")
 
     group.addoption(
         "--twister-with-robot",
@@ -28,5 +28,5 @@ def pytest_configure(config):
         logger.info("✅ Robot Framework Twister plugin configured")
 
 
-# Import collector to register hooks
+# Import collector to register the hook
 from .collector import pytest_collect_file

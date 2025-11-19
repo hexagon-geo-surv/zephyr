@@ -1,6 +1,7 @@
 pyproject.toml
 setup.py
 src/pytest_robotframework_twister/__init__.py
+src/pytest_robotframework_twister/collector.py
 src/pytest_robotframework_twister/exceptions.py
 src/pytest_robotframework_twister/fixture.py
 src/pytest_robotframework_twister/plugin.py

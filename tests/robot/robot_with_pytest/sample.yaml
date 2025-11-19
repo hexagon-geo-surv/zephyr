@@ -22,6 +22,7 @@ tests:
         - "-v"
         - "--log-cli-level=DEBUG"
         - "--twister-with-robot"
+        - "tests/robot/robot_with_pytest/robot_tests"
     integration_platforms:
       - nucleo_g474re
     min_ram: 64
