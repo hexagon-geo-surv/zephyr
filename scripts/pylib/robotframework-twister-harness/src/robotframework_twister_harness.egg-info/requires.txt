@@ -1,0 +1,16 @@
+robotframework>=6.0
+pytest-twister-harness
+pyserial>=3.5
+psutil>=5.8.0
+
+[dev]
+pytest>=7.0.0
+pytest-cov
+twine
+wheel
+black
+flake8
+
+[test]
+pytest>=7.0.0
+pytest-timeout

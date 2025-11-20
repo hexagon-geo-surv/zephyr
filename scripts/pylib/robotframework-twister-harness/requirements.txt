@@ -1,0 +1,5 @@
+# robotframework-twister-harness/requirements.txt
+robotframework>=6.0
+pytest-twister-harness>=1.0
+pyserial>=3.5
+psutil>=5.8.0

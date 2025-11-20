@@ -1,0 +1,2 @@
+[pytest11]
+robotframework_twister_harness = robotframework_twister_harness.conftest

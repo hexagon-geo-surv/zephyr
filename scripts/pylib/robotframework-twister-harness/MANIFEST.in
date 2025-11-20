@@ -1,0 +1,14 @@
+# robotframework-twister-harness/MANIFEST.in
+include README.rst
+include requirements.txt
+include pyproject.toml
+
+recursive-include resources *.robot
+recursive-include robot_tests *.robot
+recursive-include tests *.py
+
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude __pycache__
+global-exclude *.swp
+global-exclude *.egg-info

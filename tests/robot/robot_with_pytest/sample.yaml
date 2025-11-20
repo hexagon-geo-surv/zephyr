@@ -1,0 +1,24 @@
+# tests/robot/robot_with_pytest/sample.yaml
+sample:
+  name: Robot Framework Serial Communication Test
+  description: Test actual serial communication with flashed device
+
+tests:
+  test.robot.robot_with_pytest:
+    tags: robotframework serial
+    platform_allow:
+      - nucleo_g474re
+    extra_configs:
+      - CONFIG_SERIAL=y
+      - CONFIG_UART_INTERRUPT_DRIVEN=y
+      - CONFIG_CONSOLE=y
+      - CONFIG_UART_CONSOLE=y
+      - CONFIG_PRINTK=y
+      - CONFIG_STDOUT_CONSOLE=y
+    harness: pytest  # Keep as pytest for now
+    integration_platforms:
+      - nucleo_g474re
+    min_ram: 64
+    min_flash: 128
+    depends_on: serial uart console
+    extra_args: --robot-framework  # Custom argument we'll handle

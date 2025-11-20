@@ -1,0 +1,4 @@
+# tests/robot/robot_with_pytest/requirements.txt
+robotframework>=6.0
+pyserial>=3.5
+robotframework-seriallibrary>=0.4.0
