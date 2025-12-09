@@ -367,7 +367,7 @@ manifest:
         - tee
     - name: trusted-firmware-m
       remote: hexagon-public
-      revision: tfm/catfish_upstream_1
+      revision: tfm/catfish_upstream_2
       path: modules/tee/tf-m/trusted-firmware-m
       groups:
         - tee
