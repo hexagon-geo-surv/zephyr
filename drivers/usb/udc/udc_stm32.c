@@ -50,6 +50,17 @@ LOG_MODULE_REGISTER(udc_stm32, CONFIG_UDC_DRIVER_LOG_LEVEL);
 #define UDC_STM32_IRQ_NAME     usb
 #endif
 
+/*
+ * VBUS sensing is only supported on OTG controllers.
+ * The st,stm32-usb binding does not define this property.
+ */
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_otghs) || \
+	DT_HAS_COMPAT_STATUS_OKAY(st_stm32_otgfs)
+#define UDC_STM32_VBUS_SENSING DT_INST_PROP(0, vbus_sensing)
+#else
+#define UDC_STM32_VBUS_SENSING 0
+#endif
+
 /* Shorthand to obtain PHY node for an instance */
 #define UDC_STM32_PHY(usb_node)			DT_PROP_BY_IDX(usb_node, phys, 0)
 
@@ -743,6 +754,10 @@ int udc_stm32_init(const struct device *dev)
 	priv->pcd.Init.phy_itface = cfg->selected_phy;
 	priv->pcd.Init.speed = cfg->selected_speed;
 
+#if UDC_STM32_VBUS_SENSING
+	priv->pcd.Init.vbus_sensing_enable = ENABLE;
+#endif
+
 	status = HAL_PCD_Init(&priv->pcd);
 	if (status != HAL_OK) {
 		LOG_ERR("PCD_Init failed, %d", (int)status);
@@ -752,6 +767,19 @@ int udc_stm32_init(const struct device *dev)
 	if (HAL_PCD_Stop(&priv->pcd) != HAL_OK) {
 		return -EIO;
 	}
+
+#if UDC_STM32_VBUS_SENSING
+	/*
+	 * When VBUS sensing is enabled the application will not call
+	 * usbd_enable() until it receives UDC_EVT_VBUS_READY, but
+	 * the IRQ that delivers that event is only enabled inside
+	 * udc_stm32_enable().  Break the deadlock by enabling the
+	 * OTG global interrupt gate and the NVIC line here so that
+	 * SRQINT / OTGINT can fire before the device is enabled.
+	 */
+	__HAL_PCD_ENABLE(&priv->pcd);
+	irq_enable(cfg->irqn);
+#endif
 
 	return 0;
 }
@@ -1512,6 +1540,10 @@ static int udc_stm32_driver_init0(const struct device *dev)
 	if (cfg->selected_speed == PCD_SPEED_HIGH) {
 		data->caps.hs = true;
 	}
+
+#if UDC_STM32_VBUS_SENSING
+	data->caps.can_detect_vbus = true;
+#endif
 
 	priv->dev = dev;
 
