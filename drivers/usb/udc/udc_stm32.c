@@ -61,6 +61,16 @@ LOG_MODULE_REGISTER(udc_stm32, CONFIG_UDC_DRIVER_LOG_LEVEL);
 #define UDC_STM32_VBUS_SENSING 0
 #endif
 
+/*
+ * When VBUS sensing is enabled, the OTG SEDET interrupt may never fire if
+ * VBUS decays slowly after cable removal (e.g. due to large decoupling
+ * capacitors).  Work around this by polling GCCFG.SESSVLD after SUSPEND.
+ */
+#if UDC_STM32_VBUS_SENSING
+#define UDC_STM32_VBUS_POLL_MS		100
+#define UDC_STM32_VBUS_POLL_COUNT	50 /* total 5 s */
+#endif
+
 /* Shorthand to obtain PHY node for an instance */
 #define UDC_STM32_PHY(usb_node)			DT_PROP_BY_IDX(usb_node, phys, 0)
 
@@ -241,6 +251,56 @@ static void udc_stm32_unlock(const struct device *dev)
 
 #define hpcd2data(hpcd) CONTAINER_OF(hpcd, struct udc_stm32_data, pcd);
 
+#if UDC_STM32_VBUS_SENSING
+enum vbus_poll_phase {
+	VBUS_POLL_WAIT_REMOVED,	/* After suspend: wait for SESSVLD=0 */
+	VBUS_POLL_WAIT_READY,	/* After removal: wait for SESSVLD=1 */
+};
+
+static struct k_work_delayable vbus_poll_work;
+static uint32_t vbus_poll_count;
+static enum vbus_poll_phase vbus_poll_phase;
+
+static void udc_stm32_vbus_poll(struct k_work *work)
+{
+	const struct device *dev = DEVICE_DT_INST_GET(0);
+	struct udc_stm32_data *priv = udc_get_private(dev);
+	USB_OTG_GlobalTypeDef *USBx = priv->pcd.Instance;
+	bool sessvld = !!(USBx->GCCFG & USB_OTG_GCCFG_SESSVLD);
+
+	if (vbus_poll_phase == VBUS_POLL_WAIT_REMOVED) {
+		if (!sessvld) {
+			LOG_INF("VBUS poll: SESSVLD=0, VBUS removed");
+			udc_submit_event(priv->dev, UDC_EVT_VBUS_REMOVED, 0);
+			/* Transition to Phase 2: watch for reconnection */
+			vbus_poll_phase = VBUS_POLL_WAIT_READY;
+			vbus_poll_count = 0;
+			k_work_schedule(&vbus_poll_work,
+					K_MSEC(UDC_STM32_VBUS_POLL_MS));
+			return;
+		}
+
+		if (++vbus_poll_count < UDC_STM32_VBUS_POLL_COUNT) {
+			k_work_schedule(&vbus_poll_work,
+					K_MSEC(UDC_STM32_VBUS_POLL_MS));
+		} else {
+			LOG_DBG("VBUS poll: timeout, VBUS still present");
+		}
+	} else {
+		/* VBUS_POLL_WAIT_READY: poll for cable reconnection */
+		if (sessvld) {
+			LOG_INF("VBUS poll: SESSVLD=1, VBUS ready");
+			udc_submit_event(priv->dev, UDC_EVT_VBUS_READY, 0);
+			return;
+		}
+
+		/* Keep polling until VBUS returns */
+		k_work_schedule(&vbus_poll_work,
+				K_MSEC(UDC_STM32_VBUS_POLL_MS));
+	}
+}
+#endif
+
 void HAL_PCD_ResetCallback(PCD_HandleTypeDef *hpcd)
 {
 	struct udc_stm32_data *priv = hpcd2data(hpcd);
@@ -266,6 +326,9 @@ void HAL_PCD_ResetCallback(PCD_HandleTypeDef *hpcd)
 	}
 
 	udc_set_suspended(dev, false);
+#if UDC_STM32_VBUS_SENSING
+	k_work_cancel_delayable(&vbus_poll_work);
+#endif
 	udc_submit_event(priv->dev, UDC_EVT_RESET, 0);
 }
 
@@ -273,6 +336,9 @@ void HAL_PCD_ConnectCallback(PCD_HandleTypeDef *hpcd)
 {
 	struct udc_stm32_data *priv = hpcd2data(hpcd);
 
+#if UDC_STM32_VBUS_SENSING
+	k_work_cancel_delayable(&vbus_poll_work);
+#endif
 	udc_submit_event(priv->dev, UDC_EVT_VBUS_READY, 0);
 }
 
@@ -289,12 +355,22 @@ void HAL_PCD_SuspendCallback(PCD_HandleTypeDef *hpcd)
 
 	udc_set_suspended(priv->dev, true);
 	udc_submit_event(priv->dev, UDC_EVT_SUSPEND, 0);
+
+#if UDC_STM32_VBUS_SENSING
+	/* Start polling SESSVLD to detect slow VBUS decay after cable removal */
+	vbus_poll_phase = VBUS_POLL_WAIT_REMOVED;
+	vbus_poll_count = 0;
+	k_work_schedule(&vbus_poll_work, K_MSEC(UDC_STM32_VBUS_POLL_MS));
+#endif
 }
 
 void HAL_PCD_ResumeCallback(PCD_HandleTypeDef *hpcd)
 {
 	struct udc_stm32_data *priv = hpcd2data(hpcd);
 
+#if UDC_STM32_VBUS_SENSING
+	k_work_cancel_delayable(&vbus_poll_work);
+#endif
 	udc_set_suspended(priv->dev, false);
 	udc_submit_event(priv->dev, UDC_EVT_RESUME, 0);
 }
@@ -921,6 +997,10 @@ static int udc_stm32_enable(const struct device *dev)
 
 	LOG_DBG("Enable UDC");
 
+#if UDC_STM32_VBUS_SENSING
+	k_work_cancel_delayable(&vbus_poll_work);
+#endif
+
 	udc_stm32_mem_init(dev);
 
 	status = HAL_PCD_Start(&priv->pcd);
@@ -973,6 +1053,30 @@ static int udc_stm32_disable(const struct device *dev)
 		LOG_ERR("PCD_Stop failed, %d", (int)status);
 		return -EIO;
 	}
+
+#if UDC_STM32_VBUS_SENSING
+	/*
+	 * Re-enable the OTG global interrupt gate and the NVIC line
+	 * so that SRQINT / OTGINT can still fire while the device is
+	 * disabled.  Without this, a subsequent VBUS reconnect would
+	 * never be detected and usbd_enable() would never be called
+	 * again by the application.
+	 *
+	 * Clear stale device-activity flags (e.g. USBRST accumulated
+	 * during the power-down transition) before re-opening the
+	 * interrupt gate, otherwise they fire immediately and confuse
+	 * the stack.
+	 */
+	priv->pcd.Instance->GOTGINT = 0xFFFFFFFFU;
+	priv->pcd.Instance->GINTSTS = 0xBFFFFFFFU;
+	__HAL_PCD_ENABLE(&priv->pcd);
+	irq_enable(cfg->irqn);
+
+	/* Start polling for VBUS reconnection (SRQINT may not fire) */
+	vbus_poll_phase = VBUS_POLL_WAIT_READY;
+	vbus_poll_count = 0;
+	k_work_schedule(&vbus_poll_work, K_MSEC(UDC_STM32_VBUS_POLL_MS));
+#endif
 
 	return 0;
 }
@@ -1543,6 +1647,7 @@ static int udc_stm32_driver_init0(const struct device *dev)
 
 #if UDC_STM32_VBUS_SENSING
 	data->caps.can_detect_vbus = true;
+	k_work_init_delayable(&vbus_poll_work, udc_stm32_vbus_poll);
 #endif
 
 	priv->dev = dev;
