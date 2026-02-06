@@ -170,6 +170,7 @@ struct flash_stm32_ospi_data {
 	uint8_t jedec_id[JESD216_READ_ID_LEN];
 #endif /* CONFIG_FLASH_JESD216_API */
 	int cmd_status;
+	uint32_t saved_prescaler;
 #if STM32_OSPI_USE_DMA
 	struct stream dma;
 #endif /* STM32_OSPI_USE_DMA */
@@ -807,6 +808,49 @@ static int stm32_ospi_read_cfg2reg(OSPI_HandleTypeDef *hospi,
 
 	if (HAL_OSPI_Receive(hospi, value, HAL_OSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK) {
 		LOG_ERR("Write Flash configuration reg2 failed");
+		return -EIO;
+	}
+
+	return 0;
+}
+
+/*
+ * W25Q256JW-specific CR2 register write.
+ * Uses opcode 0x31 (Write Status Register-2) with no address phase,
+ * 1-line SPI, 1 byte data. This differs from the Macronix MX25-style
+ * stm32_ospi_write_cfg2reg_io() which uses opcode 0x72 with a 32-bit address.
+ */
+static int stm32_ospi_w25q_write_cr2(struct flash_stm32_ospi_data *dev_data,
+				      uint8_t value)
+{
+	OSPI_HandleTypeDef *hospi = &dev_data->hospi;
+	OSPI_RegularCmdTypeDef s_command = {0};
+
+	s_command.OperationType = HAL_OSPI_OPTYPE_COMMON_CFG;
+	s_command.FlashId = HAL_OSPI_FLASH_ID_1;
+	s_command.InstructionMode = HAL_OSPI_INSTRUCTION_1_LINE;
+	s_command.InstructionDtrMode = HAL_OSPI_INSTRUCTION_DTR_DISABLE;
+	s_command.InstructionSize = HAL_OSPI_INSTRUCTION_8_BITS;
+	s_command.Instruction = 0x31U; /* W25Q256JW Write Status Register-2 */
+	s_command.AddressMode = HAL_OSPI_ADDRESS_NONE;
+	s_command.AddressDtrMode = HAL_OSPI_ADDRESS_DTR_DISABLE;
+	s_command.AlternateBytesMode = HAL_OSPI_ALTERNATE_BYTES_NONE;
+	s_command.DataMode = HAL_OSPI_DATA_1_LINE;
+	s_command.DataDtrMode = HAL_OSPI_DATA_DTR_DISABLE;
+	s_command.DummyCycles = 0U;
+	s_command.NbData = 1U;
+	s_command.DQSMode = HAL_OSPI_DQS_DISABLE;
+	s_command.SIOOMode = HAL_OSPI_SIOO_INST_EVERY_CMD;
+
+	if (HAL_OSPI_Command(hospi, &s_command,
+		HAL_OSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK) {
+		LOG_ERR("W25Q CR2 write cmd failed");
+		return -EIO;
+	}
+
+	if (HAL_OSPI_Transmit(hospi, &value,
+		HAL_OSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK) {
+		LOG_ERR("W25Q CR2 write data failed");
 		return -EIO;
 	}
 
@@ -2348,6 +2392,8 @@ static int flash_stm32_ospi_init(const struct device *dev)
 	__ASSERT_NO_MSG(prescaler >= STM32_OSPI_CLOCK_PRESCALER_MIN &&
 			prescaler <= STM32_OSPI_CLOCK_PRESCALER_MAX);
 
+	dev_data->saved_prescaler = prescaler;
+
 	/* Initialize OSPI HAL structure completely */
 	dev_data->hospi.Init.FifoThreshold = 4;
 	dev_data->hospi.Init.ClockPrescaler = prescaler;
@@ -2690,16 +2736,153 @@ static struct flash_stm32_ospi_data flash_stm32_ospi_dev_data = {
 };
 
 #ifdef CONFIG_PM_DEVICE
+/*
+ * PM suspend: reconfigure OSPI peripheral and flash chip to match TF-M's
+ * expected QPI (4-4-4) state before FOTA install. TF-M does not reinitialize
+ * the OSPI peripheral, so we must leave it in the exact configuration TF-M
+ * expects: flash CR2=0x02 (QPI enabled), prescaler=2, FIFO=1,
+ * FreeRunningClock=ENABLE.
+ *
+ * PM resume: reset flash back to SPI mode and restore Zephyr's peripheral
+ * configuration so normal flash operations (NVS, storage) work correctly.
+ */
 static int flash_stm32_ospi_pm_action(const struct device *dev,
 				      enum pm_device_action action)
 {
+	struct flash_stm32_ospi_data *dev_data = dev->data;
+	int ret;
+
 	switch (action) {
 	case PM_DEVICE_ACTION_SUSPEND:
+		/* Block Zephyr flash access during FOTA */
 		ospi_lock_thread(dev);
+
+		/* Wait for any in-progress flash operation to complete */
+		ret = stm32_ospi_mem_ready(dev_data,
+			OSPI_SPI_MODE, OSPI_STR_TRANSFER);
+		if (ret != 0) {
+			LOG_ERR("PM suspend: flash not ready");
+			ospi_unlock_thread(dev);
+			return ret;
+		}
+
+		/* Enable writes before changing CR2 */
+		ret = stm32_ospi_write_enable(dev_data,
+			OSPI_SPI_MODE, OSPI_STR_TRANSFER);
+		if (ret != 0) {
+			LOG_ERR("PM suspend: write enable failed");
+			ospi_unlock_thread(dev);
+			return ret;
+		}
+
+		/* Switch flash to QPI mode (CR2 = 0x02) */
+		ret = stm32_ospi_w25q_write_cr2(dev_data, 0x02U);
+		if (ret != 0) {
+			LOG_ERR("PM suspend: CR2 write failed");
+			ospi_unlock_thread(dev);
+			return ret;
+		}
+
+		/* Wait for register write to complete */
+		k_busy_wait(STM32_OSPI_WRITE_REG_MAX_TIME * USEC_PER_MSEC);
+
+		/* Reconfigure peripheral to match TF-M's expected state */
+		dev_data->hospi.Init.ClockPrescaler = 2;
+		dev_data->hospi.Init.FifoThreshold = 1;
+		dev_data->hospi.Init.ChipSelectHighTime = 3;
+		dev_data->hospi.Init.FreeRunningClock =
+			HAL_OSPI_FREERUNCLK_ENABLE;
+		dev_data->hospi.Init.MemoryType = HAL_OSPI_MEMTYPE_MICRON;
+		dev_data->hospi.Init.DelayHoldQuarterCycle =
+			HAL_OSPI_DHQC_DISABLE;
+
+		if (HAL_OSPI_Init(&dev_data->hospi) != HAL_OK) {
+			LOG_ERR("PM suspend: OSPI reinit failed");
+			ospi_unlock_thread(dev);
+			return -EIO;
+		}
+
+		/* Auto-calibrate delay block for new clock configuration */
+		{
+			HAL_OSPI_DLYB_CfgTypeDef dlyb_cfg;
+
+			if (HAL_OSPI_DLYB_GetClockPeriod(&dev_data->hospi,
+				&dlyb_cfg) != HAL_OK) {
+				LOG_ERR("PM suspend: DLYB GetClockPeriod failed");
+				ospi_unlock_thread(dev);
+				return -EIO;
+			}
+
+			dlyb_cfg.PhaseSel /= 4;
+
+			if (HAL_OSPI_DLYB_SetConfig(&dev_data->hospi,
+				&dlyb_cfg) != HAL_OK) {
+				LOG_ERR("PM suspend: DLYB SetConfig failed");
+				ospi_unlock_thread(dev);
+				return -EIO;
+			}
+		}
+
+		LOG_INF("PM suspend: OSPI configured for TF-M (QPI mode)");
 		return 0;
+
 	case PM_DEVICE_ACTION_RESUME:
+		/*
+		 * Reset flash: sends reset-enable + reset-memory in
+		 * SPI, OPI/STR, and OPI/DTR modes. This returns the
+		 * flash to SPI mode (CR2 = 0x00).
+		 */
+		ret = stm32_ospi_mem_reset(dev);
+		if (ret != 0) {
+			LOG_ERR("PM resume: flash reset failed");
+			ospi_unlock_thread(dev);
+			return ret;
+		}
+
+		/* Restore Zephyr's peripheral configuration */
+		dev_data->hospi.Init.ClockPrescaler =
+			dev_data->saved_prescaler;
+		dev_data->hospi.Init.FifoThreshold = STM32_OSPI_FIFO_THRESHOLD;
+		dev_data->hospi.Init.ChipSelectHighTime = 2;
+		dev_data->hospi.Init.FreeRunningClock =
+			HAL_OSPI_FREERUNCLK_DISABLE;
+
+		if (HAL_OSPI_Init(&dev_data->hospi) != HAL_OK) {
+			LOG_ERR("PM resume: OSPI reinit failed");
+			ospi_unlock_thread(dev);
+			return -EIO;
+		}
+
+		/* Restore Zephyr's delay block settings */
+		{
+			HAL_OSPI_DLYB_CfgTypeDef dlyb_cfg;
+
+			dlyb_cfg.Units = 56;
+			dlyb_cfg.PhaseSel = 2;
+
+			if (HAL_OSPI_DLYB_SetConfig(&dev_data->hospi,
+				&dlyb_cfg) != HAL_OK) {
+				LOG_ERR("PM resume: DLYB SetConfig failed");
+				ospi_unlock_thread(dev);
+				return -EIO;
+			}
+		}
+
+		/* Verify flash is responsive in SPI mode */
+		ret = stm32_ospi_mem_ready(dev_data,
+			OSPI_SPI_MODE, OSPI_STR_TRANSFER);
+		if (ret != 0) {
+			LOG_ERR("PM resume: flash not ready after restore");
+			ospi_unlock_thread(dev);
+			return ret;
+		}
+
+		/* Unblock Zephyr flash access */
 		ospi_unlock_thread(dev);
+
+		LOG_INF("PM resume: OSPI restored for Zephyr (SPI mode)");
 		return 0;
+
 	default:
 		return -ENOTSUP;
 	}
