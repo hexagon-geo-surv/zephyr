@@ -21,6 +21,18 @@ static uint8_t rx_buf1[RX_BUFFER_SIZE];
 
 static uint8_t rx_buf_idx;
 
+/* Set by the async callback when a UART_RX_BUF_REQUEST is declined because the
+ * RX ring buffer has no room for another staging buffer. While set, RX stays
+ * disabled so the UART deasserts RTS and the modem pauses (needs hardware flow
+ * control); the read path re-enables RX once the consumer frees space.
+ */
+static atomic_t rx_throttled;
+
+/* Count of UART_RX_STOPPED events (overrun / framing / parity). Stays 0 in
+ * healthy operation; nonzero means bytes were lost before the ring buffer.
+ */
+static uint32_t rx_stopped_count;
+
 static void iface_uart_async_callback(const struct device *dev,
 				      struct uart_event *evt,
 				      void *user_data)
@@ -35,6 +47,18 @@ static void iface_uart_async_callback(const struct device *dev,
 		k_sem_give(&data->tx_sem);
 		break;
 	case UART_RX_BUF_REQUEST:
+		/* Back-pressure: with hardware flow control, decline the next
+		 * buffer when the ring cannot absorb one more staging buffer
+		 * beyond the one still filling. RX then disables, the UART
+		 * deasserts RTS and the modem pauses, instead of the ISR
+		 * dropping bytes on a full ring. Without flow control, declining
+		 * would only provoke an overrun, so keep providing as before.
+		 */
+		if (data->hw_flow_control &&
+		    ring_buf_space_get(&data->rx_rb) < (2 * RX_BUFFER_SIZE)) {
+			atomic_set(&rx_throttled, 1);
+			break;
+		}
 		/* Provide the next static buffer to the UART driver */
 		if (rx_buf_idx == 0) {
 			rx_buf_idx = 1;
@@ -58,9 +82,23 @@ static void iface_uart_async_callback(const struct device *dev,
 		k_sem_give(&data->rx_sem);
 		break;
 	case UART_RX_STOPPED:
+		/* Bytes were lost on the wire (overrun / framing / parity)
+		 * before reaching the ring buffer. Healthy operation never
+		 * hits this; a nonzero count points at the UART/DMA layer.
+		 */
+		rx_stopped_count++;
+		LOG_ERR("UART RX stopped: reason 0x%x, count %u",
+			(unsigned int)evt->data.rx_stop.reason,
+			rx_stopped_count);
 		break;
 	case UART_RX_DISABLED:
-		/* RX stopped (likely due to line error), re-enable it */
+		/* If RX was disabled deliberately for back-pressure, leave it
+		 * off; the read path re-enables once the ring drains. Otherwise
+		 * this is a line error -- re-enable to recover.
+		 */
+		if (atomic_get(&rx_throttled)) {
+			break;
+		}
 		rc = uart_rx_enable(dev, rx_buf0, RX_BUFFER_SIZE,
 				    CONFIG_MODEM_IFACE_UART_ASYNC_RX_TIMEOUT_US);
 		if (rc < 0) {
@@ -89,6 +127,27 @@ static int modem_iface_uart_async_read(struct modem_iface *iface,
 	/* Pull data off the ring buffer */
 	data = iface->iface_data;
 	*bytes_read = ring_buf_get(&data->rx_rb, buf, size);
+
+	/* Resume reception if it was throttled for back-pressure and the ring
+	 * has drained enough to absorb another staging buffer. Safe to touch
+	 * rx_buf_idx here: while throttled RX is disabled, so the async callback
+	 * cannot run. Clear the flag before re-enabling so a fresh
+	 * UART_RX_BUF_REQUEST is not declined, and restore it if the enable
+	 * fails so the next read retries.
+	 */
+	if (atomic_get(&rx_throttled) &&
+	    ring_buf_space_get(&data->rx_rb) >= (2 * RX_BUFFER_SIZE)) {
+		int rc;
+
+		rx_buf_idx = 0;
+		atomic_clear(&rx_throttled);
+		rc = uart_rx_enable(iface->dev, rx_buf0, RX_BUFFER_SIZE,
+				    CONFIG_MODEM_IFACE_UART_ASYNC_RX_TIMEOUT_US);
+		if (rc < 0) {
+			atomic_set(&rx_throttled, 1);
+			LOG_ERR("Failed to re-enable UART RX after back-pressure");
+		}
+	}
 	return 0;
 }
 
